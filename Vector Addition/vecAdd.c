@@ -6,7 +6,13 @@ Sources: http://www.eriksmistad.no/getting-started-with-opencl-and-gpu-computing
 
 // openCL headers
 
+#ifdef __APPLE__
+#include <OpenCL/opencl.h>
+#else
 #include <CL/cl.h>
+#endif
+
+
 
 #include <stdio.h>
 #include <stdlib.h>
