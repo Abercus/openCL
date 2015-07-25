@@ -1,0 +1,1 @@
+CUDA code from the course "Applications of Parallel Computing" converted OpenCL code.
