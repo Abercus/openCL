@@ -19,6 +19,12 @@
 
 extern double size;
 
+
+/* 
+IMPLEMENT BINNING (REBINNING ON GPU). MIGHT NEED TO USE ATOMIC ADD
+
+*/
+
 int main(int argc, char **argv) {
 
 	if (find_option(argc, argv, "-h") >= 0)
@@ -126,38 +132,34 @@ int main(int argc, char **argv) {
 
 	// Local item size
 	localItemSize = globalItemSize / NUM_THREADS;
-	//printf("localItemSize %i\n", localItemSize);
 
-	double simulation_time = read_timer();
-	for (int step = 0; step < NSTEPS; step++) {
-
-		//  compute forces
+	
 
 		// Set arguments for force kernel.
 		ret = clSetKernelArg(forceKernel, 0, sizeof(cl_mem), (void *)&d_particles);
-		//	printf("%i \n", ret);	
-		ret = clSetKernelArg(forceKernel, 1, sizeof(int), &n);
-		//	printf("%i \n", ret);
-		// Execute force kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, NULL, &globalItemSize, NULL, 0, NULL, &kernelDone);
-		//	printf("%i \n", ret);
-		//compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
-		ret = clWaitForEvents(1, &kernelDone);
+		ret = clSetKernelArg(forceKernel, 1, sizeof(int), &n);	
 
 		// Set arguments for move kernel
 		ret = clSetKernelArg(moveKernel, 0, sizeof(cl_mem), (void *)&d_particles);
 		ret = clSetKernelArg(moveKernel, 1, sizeof(int), &n);
 		ret = clSetKernelArg(moveKernel, 2, sizeof(double), &size);
-		// Execute move kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, NULL, &globalItemSize, NULL, 0, NULL, &kernelDone);
-		ret = clWaitForEvents(1, &kernelDone);
-		//printf("%i \n", ret);
+	
+	
+	
+	double simulation_time = read_timer();
+	for (int step = 0; step < NSTEPS; step++) {
 
-		//move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
+		// Execute force kernel
+		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, &localItemSize, &globalItemSize, NULL, 0, NULL, &kernelDone);
+		ret = clWaitForEvents(1, &kernelDone);
+
+		// Execute move kernel
+		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, &localItemSize, &globalItemSize, NULL, 0, NULL, &kernelDone);
+		ret = clWaitForEvents(1, &kernelDone);
+
 
 		if (fsave && (step%SAVEFREQ) == 0) {
 			// Copy the particles back to the CPU
-			//cudaMemcpy(particles, d_particles, n * sizeof(particle_t), cudaMemcpyDeviceToHost);
 			ret = clEnqueueReadBuffer(commandQueue, d_particles, CL_TRUE, 0, n * sizeof(particle_t), particles, 0, NULL, &kernelDone);
 			ret = clWaitForEvents(1, &kernelDone);
 
