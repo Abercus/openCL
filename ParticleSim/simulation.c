@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 	
 	
 	int n = read_int( argc, argv, "-n", 1000 );
-
+	//n = 1000;
 	//n = 100;
     char *savename = read_string( argc, argv, "-o", NULL );
     char *sumname = read_string( argc, argv, "-s", NULL );
@@ -86,15 +86,16 @@ int main(int argc, char **argv) {
 	cl_program program = clCreateProgramWithSource(context, 1, (const char **)&kernelSource, (const size_t *)&kernelSize, &ret);	
 
 
-	ret = clBuildProgram(program, 1, &deviceID, "-I /home/ubuntu/Desktop/sim", NULL, NULL);
+	ret = clBuildProgram(program, 1, &deviceID, NULL, NULL, NULL);
 
 
 	
 //	ret = clBuildProgram(program, 1, &deviceID, NULL, NULL, NULL);
-			printf("%i \n", ret);
+			//printf("%i \n", ret);
     cl_kernel forceKernel = clCreateKernel(program, "compute_forces_gpu", &ret);
+			//printf("%i \n", ret);
 	cl_kernel moveKernel = clCreateKernel(program, "move_gpu", &ret);
-	
+				//printf("%i \n", ret);
 	
 	
     FILE *fsave = savename ? fopen( savename, "w" ) : NULL;
@@ -104,6 +105,7 @@ int main(int argc, char **argv) {
     // GPU particle data structure
 	
 	cl_mem d_particles = clCreateBuffer(context, CL_MEM_READ_WRITE, n * sizeof(particle_t), NULL, &ret);
+			//printf("%i \n", ret);
 	
 	
 	
@@ -119,42 +121,49 @@ int main(int argc, char **argv) {
 	
 	// Copy particles to device.
 	ret = clEnqueueWriteBuffer(commandQueue, d_particles, CL_TRUE, 0, n * sizeof(particle_t), particles, 0, NULL, NULL);
-    
+    			//printf("%i \n", ret);
 	copy_time = read_timer( ) - copy_time;
 	
-	
+	cl_event kernelDone;	
+
 	double simulation_time = read_timer( );
     for( int step = 0; step < NSTEPS; step++ ) {
 		
 		 //  compute forces
-		size_t localItemSize = (n + NUM_THREADS - 1) / NUM_THREADS;
-		size_t globalItemSize = n;
+		size_t localItemSize = 100;
+		size_t globalItemSize = 20000;
 		
 		// Set arguments for force kernel.
-		ret = clSetKernelArg(forceKernel, 0, sizeof(cl_mem), (void *)&d_particles);	
+		ret = clSetKernelArg(forceKernel, 0, sizeof(cl_mem), (void *)&d_particles);
+		//	printf("%i \n", ret);	
 		ret = clSetKernelArg(forceKernel, 1, sizeof(int), &n);	
-
+		//	printf("%i \n", ret);
 		// Execute force kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, NULL);
-
+		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
+		//	printf("%i \n", ret);
 		//compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
-		
+		 ret = clWaitForEvents(1, &kernelDone);
+
 		// Set arguments for move kernel
 		ret = clSetKernelArg(moveKernel, 0, sizeof(cl_mem), (void *)&d_particles);	
 		ret = clSetKernelArg(moveKernel, 1, sizeof(int), &n);
 		ret = clSetKernelArg(moveKernel, 2, sizeof(double), &size);
 		// Execute move kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, NULL);
-
+		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
+		 ret = clWaitForEvents(1, &kernelDone);
+			//printf("%i \n", ret);
 		
 		//move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
-		/*
+		
         if( fsave && (step%SAVEFREQ) == 0 ) {
 	    // Copy the particles back to the CPU
-            cudaMemcpy(particles, d_particles, n * sizeof(particle_t), cudaMemcpyDeviceToHost);
-            save( fsave, n, particles);
+            //cudaMemcpy(particles, d_particles, n * sizeof(particle_t), cudaMemcpyDeviceToHost);
+		ret = clEnqueueReadBuffer(commandQueue, d_particles, CL_TRUE, 0, n * sizeof(particle_t), particles, 0, NULL, &kernelDone);
+		 ret = clWaitForEvents(1, &kernelDone);
+            
+	save( fsave, n, particles);
 	}
-	*/
+	
 		
 	}
     simulation_time = read_timer( ) - simulation_time;
@@ -170,7 +179,7 @@ int main(int argc, char **argv) {
     if( fsave )
         fclose( fsave );
     
-	
+
 	ret = clFlush(commandQueue);
 	ret = clFinish(commandQueue);
 	ret = clReleaseCommandQueue(commandQueue);
@@ -180,7 +189,7 @@ int main(int argc, char **argv) {
 	ret = clReleaseMemObject(d_particles);
 	ret = clReleaseContext(context);
 	
-	
+
     return 0;	
 	}
 
