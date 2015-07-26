@@ -14,14 +14,25 @@ Sample image from visualization:
 Time taken for 1000 steps (ran on virtual machine, script in speed.sh):
 
 CPU-GPU copy time = 2.5e-05 seconds
+
 n = 128, simulation time = 0.099288 seconds
+
 CPU-GPU copy time = 2.8e-05 seconds
+
 n = 256, simulation time = 0.350236 seconds
+
 CPU-GPU copy time = 3e-05 seconds
+
 n = 512, simulation time = 1.44735 seconds
+
 CPU-GPU copy time = 2.8e-05 seconds
+
 n = 1024, simulation time = 4.63172 seconds
+
 CPU-GPU copy time = 3.5e-05 seconds
+
 n = 2048, simulation time = 12.7454 seconds
+
 CPU-GPU copy time = 4.9e-05 seconds
+
 n = 4096, simulation time = 46.984 seconds
