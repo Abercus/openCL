@@ -20,32 +20,27 @@
 extern double size;
 
 int main(int argc, char **argv) {
-	
-	if( find_option( argc, argv, "-h" ) >= 0 )
-    {
-        printf( "Options:\n" );
-        printf( "-h to see this help\n" );
-        printf( "-n <int> to set the number of particles\n" );
-        printf( "-o <filename> to specify the output file name\n" );
-		printf( "-s <filename> to specify the summary output file name\n" );
-        return 0;
-    }
-	
-	
-	int n = read_int( argc, argv, "-n", 1000 );
-	//n = 1000;
-	//n = 100;
-    char *savename = read_string( argc, argv, "-o", NULL );
-    char *sumname = read_string( argc, argv, "-s", NULL );
+
+	if (find_option(argc, argv, "-h") >= 0)
+	{
+		printf("Options:\n");
+		printf("-h to see this help\n");
+		printf("-n <int> to set the number of particles\n");
+		printf("-o <filename> to specify the output file name\n");
+		printf("-s <filename> to specify the summary output file name\n");
+		return 0;
+	}
 
 
+	int n = read_int(argc, argv, "-n", 1000);
 
+	char *savename = read_string(argc, argv, "-o", NULL);
+	char *sumname = read_string(argc, argv, "-s", NULL);
 
 	// For return values.
 	cl_int ret;
 
 	// OpenCL stuff.
-
 	// Loading kernel files.
 	FILE *kernelFile;
 	char *kernelSource;
@@ -54,11 +49,8 @@ int main(int argc, char **argv) {
 	kernelFile = fopen("simulationKernel.cl", "r");
 
 	if (!kernelFile) {
-
 		fprintf(stderr, "No file named simulationKernel.cl was found\n");
-
 		exit(-1);
-
 	}
 	kernelSource = (char*)malloc(MAX_SOURCE_SIZE);
 	kernelSize = fread(kernelSource, 1, MAX_SOURCE_SIZE, kernelFile);
@@ -73,112 +65,120 @@ int main(int argc, char **argv) {
 	ret = clGetPlatformIDs(1, &platformId, &retNumPlatforms);
 	ret = clGetDeviceIDs(platformId, CL_DEVICE_TYPE_DEFAULT, 1, &deviceID, &retNumDevices);
 
-	
+
+	// Max workgroup size
+	size_t max_available_local_wg_size;
+	ret = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &max_available_local_wg_size, NULL);
+
 	// Creating context.
-	cl_context context = clCreateContext(NULL, 1, &deviceID, NULL, NULL,  &ret);
+	cl_context context = clCreateContext(NULL, 1, &deviceID, NULL, NULL, &ret);
 
 
 	// Creating command queue
 	cl_command_queue commandQueue = clCreateCommandQueue(context, deviceID, 0, &ret);
 
-	
-	
-	cl_program program = clCreateProgramWithSource(context, 1, (const char **)&kernelSource, (const size_t *)&kernelSize, &ret);	
-
+	// Build program
+	cl_program program = clCreateProgramWithSource(context, 1, (const char **)&kernelSource, (const size_t *)&kernelSize, &ret);
 
 	ret = clBuildProgram(program, 1, &deviceID, NULL, NULL, NULL);
-
-
 	
-//	ret = clBuildProgram(program, 1, &deviceID, NULL, NULL, NULL);
-			//printf("%i \n", ret);
-    cl_kernel forceKernel = clCreateKernel(program, "compute_forces_gpu", &ret);
-			//printf("%i \n", ret);
+	// Create kernels
+	cl_kernel forceKernel = clCreateKernel(program, "compute_forces_gpu", &ret);
 	cl_kernel moveKernel = clCreateKernel(program, "move_gpu", &ret);
-				//printf("%i \n", ret);
-	
-	
-    FILE *fsave = savename ? fopen( savename, "w" ) : NULL;
-    FILE *fsum = sumname ? fopen(sumname,"a") : NULL;
-    particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
 
-    // GPU particle data structure
-	
+	FILE *fsave = savename ? fopen(savename, "w") : NULL;
+	FILE *fsum = sumname ? fopen(sumname, "a") : NULL;
+	particle_t *particles = (particle_t*)malloc(n * sizeof(particle_t));
+
+	// GPU particle data structure
+
 	cl_mem d_particles = clCreateBuffer(context, CL_MEM_READ_WRITE, n * sizeof(particle_t), NULL, &ret);
-			//printf("%i \n", ret);
-	
-	
-	
-	// Create force kernel, move kernel, etc..
-	
-	
-	// Set size
-    set_size( n );
 
-    init_particles( n, particles );
-	
+	// Set size
+	set_size(n);
+
+	init_particles(n, particles);
+
 	double copy_time = read_timer();
-	
+
 	// Copy particles to device.
 	ret = clEnqueueWriteBuffer(commandQueue, d_particles, CL_TRUE, 0, n * sizeof(particle_t), particles, 0, NULL, NULL);
-    			//printf("%i \n", ret);
-	copy_time = read_timer( ) - copy_time;
-	
-	cl_event kernelDone;	
+	copy_time = read_timer() - copy_time;
+	cl_event kernelDone;
 
-	double simulation_time = read_timer( );
-    for( int step = 0; step < NSTEPS; step++ ) {
-		
-		 //  compute forces
-		size_t localItemSize = 100;
-		size_t globalItemSize = 20000;
-		
+
+	// sizes
+	size_t globalItemSize;
+	size_t localItemSize;
+	// Global item size
+	if (n <= NUM_THREADS) {
+		globalItemSize = NUM_THREADS;
+		localItemSize = 16;
+	}
+	else if (n % NUM_THREADS != 0) {
+		globalItemSize = (n / NUM_THREADS + 1) * NUM_THREADS;
+	}
+	else {
+		globalItemSize = n;
+	}
+
+	//printf("globalItemSize %i\n", globalItemSize);
+
+	// Local item size
+	localItemSize = globalItemSize / NUM_THREADS;
+	//printf("localItemSize %i\n", localItemSize);
+
+	double simulation_time = read_timer();
+	for (int step = 0; step < NSTEPS; step++) {
+
+		//  compute forces
+
 		// Set arguments for force kernel.
 		ret = clSetKernelArg(forceKernel, 0, sizeof(cl_mem), (void *)&d_particles);
 		//	printf("%i \n", ret);	
-		ret = clSetKernelArg(forceKernel, 1, sizeof(int), &n);	
+		ret = clSetKernelArg(forceKernel, 1, sizeof(int), &n);
 		//	printf("%i \n", ret);
 		// Execute force kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
+		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, NULL, &globalItemSize, NULL, 0, NULL, &kernelDone);
 		//	printf("%i \n", ret);
 		//compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
-		 ret = clWaitForEvents(1, &kernelDone);
+		ret = clWaitForEvents(1, &kernelDone);
 
 		// Set arguments for move kernel
-		ret = clSetKernelArg(moveKernel, 0, sizeof(cl_mem), (void *)&d_particles);	
+		ret = clSetKernelArg(moveKernel, 0, sizeof(cl_mem), (void *)&d_particles);
 		ret = clSetKernelArg(moveKernel, 1, sizeof(int), &n);
 		ret = clSetKernelArg(moveKernel, 2, sizeof(double), &size);
 		// Execute move kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
-		 ret = clWaitForEvents(1, &kernelDone);
-			//printf("%i \n", ret);
-		
+		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, NULL, &globalItemSize, NULL, 0, NULL, &kernelDone);
+		ret = clWaitForEvents(1, &kernelDone);
+		//printf("%i \n", ret);
+
 		//move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
-		
-        if( fsave && (step%SAVEFREQ) == 0 ) {
-	    // Copy the particles back to the CPU
-            //cudaMemcpy(particles, d_particles, n * sizeof(particle_t), cudaMemcpyDeviceToHost);
-		ret = clEnqueueReadBuffer(commandQueue, d_particles, CL_TRUE, 0, n * sizeof(particle_t), particles, 0, NULL, &kernelDone);
-		 ret = clWaitForEvents(1, &kernelDone);
-            
-	save( fsave, n, particles);
-	}
-	
-		
-	}
-    simulation_time = read_timer( ) - simulation_time;
-    printf( "CPU-GPU copy time = %g seconds\n", copy_time);
-    printf( "n = %d, simulation time = %g seconds\n", n, simulation_time );
 
-    if (fsum)
-	fprintf(fsum,"%d %lf \n",n,simulation_time);
+		if (fsave && (step%SAVEFREQ) == 0) {
+			// Copy the particles back to the CPU
+			//cudaMemcpy(particles, d_particles, n * sizeof(particle_t), cudaMemcpyDeviceToHost);
+			ret = clEnqueueReadBuffer(commandQueue, d_particles, CL_TRUE, 0, n * sizeof(particle_t), particles, 0, NULL, &kernelDone);
+			ret = clWaitForEvents(1, &kernelDone);
 
-    if (fsum)
-	fclose( fsum );    
-    free( particles );
-    if( fsave )
-        fclose( fsave );
-    
+			save(fsave, n, particles);
+		}
+
+
+	}
+	simulation_time = read_timer() - simulation_time;
+	printf("CPU-GPU copy time = %g seconds\n", copy_time);
+	printf("n = %d, simulation time = %g seconds\n", n, simulation_time);
+
+	if (fsum)
+		fprintf(fsum, "%d %lf \n", n, simulation_time);
+
+	if (fsum)
+		fclose(fsum);
+	free(particles);
+	if (fsave)
+		fclose(fsave);
+
 
 	ret = clFlush(commandQueue);
 	ret = clFinish(commandQueue);
@@ -188,8 +188,7 @@ int main(int argc, char **argv) {
 	ret = clReleaseProgram(program);
 	ret = clReleaseMemObject(d_particles);
 	ret = clReleaseContext(context);
-	
 
-    return 0;	
-	}
 
+	return 0;
+}
