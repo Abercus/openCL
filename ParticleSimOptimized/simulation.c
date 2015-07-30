@@ -191,13 +191,13 @@ int main(int argc, char **argv) {
 		ret = clEnqueueNDRangeKernel(commandQueue, binInitKernel, 1, NULL, &clearAmt, NULL, 0, NULL, &kernelDone);
 		ret = clWaitForEvents(1, &kernelDone);
 		// Execute binning kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, binKernel, 1, &localItemSize, &globalItemSize, NULL, 0, NULL, &kernelDone);
+		ret = clEnqueueNDRangeKernel(commandQueue, binKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
 		ret = clWaitForEvents(1, &kernelDone);	
 		// Execute force kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, &localItemSize, &globalItemSize, NULL, 0, NULL, &kernelDone);
+		ret = clEnqueueNDRangeKernel(commandQueue, forceKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
 		ret = clWaitForEvents(1, &kernelDone);
 		// Execute move kernel
-		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, &localItemSize, &globalItemSize, NULL, 0, NULL, &kernelDone);
+		ret = clEnqueueNDRangeKernel(commandQueue, moveKernel, 1, NULL, &globalItemSize, &localItemSize, 0, NULL, &kernelDone);
 		ret = clWaitForEvents(1, &kernelDone);
 
 		if (fsave && (step%SAVEFREQ) == 0) {
